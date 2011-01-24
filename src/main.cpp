@@ -1,16 +1,15 @@
-#include <iostream>
-#include "mpsc_queue.hpp"
 #include "task_distributing_scheduler.hpp"
+#include <iostream>
 #include <sys/time.h>
 #include <cstring>
 
-enum {block_width=8, block_height=8};
-enum {image_width=4096, image_height=4096};
+enum { kBlockWidth = 8, kBlockHeight = 8 };
+enum { kImageWidth = 4096, kImageHeight = 4096 };
 //----
-enum {num_horizontal_blocks=image_width/block_width};
-enum {num_vertical_blocks=image_height/block_height};
-double g_delta_cr=0.0;
-double g_delta_ci=0.0;
+enum { kNumHorizontalBlocks = kImageWidth / kBlockWidth };
+enum { kNumVerticalBlocks = kImageHeight / kBlockHeight };
+double g_delta_cr = 0.0;
+double g_delta_ci = 0.0;
 //----------------------------------------------------------------------------
 
 
@@ -28,33 +27,33 @@ void calculate_mandelbrot_block(void *data)
 {
 	mandelbrot_block* block_ = static_cast< mandelbrot_block* >(data);
 	// calculate Mandelbrot fractal image block
-	double ci=block_->start_ci;
-	for(unsigned y=0; y<block_height; ++y)
+	double ci = block_->start_ci;
+	for(unsigned y = 0; y < kBlockHeight; ++y)
 	{
-		uint8_t *res=block_->result+y*image_width;
+		uint8_t *res=block_->result+y*kImageWidth;
 		double cr=block_->start_cr;
-		for(unsigned x=0; x<block_width; ++x)
+		for(unsigned x = 0; x < kBlockWidth; ++x)
 		{
 			// calculate Mandelbrot fractal pixel
-			double zr=cr, zi=ci;
+			double zr = cr, zi = ci;
 			double zr2, zi2;
-			enum {max_iterations=256};
-			unsigned i=0;
+			enum { kMaxIterations = 256 };
+			unsigned i = 0;
 			do
 			{
-				zr2=zr*zr;
-				zi2=zi*zi;
-				zi=2.0*zr*zi+ci;
-				zr=zr2-zi2+cr;
-			} while(zr2+zi2<4.0 && ++i<max_iterations);
+				zr2 = zr * zr;
+				zi2 = zi * zi;
+				zi = 2.0 * zr * zi + ci;
+				zr = zr2 - zi2 + cr;
+			} while(zr2 + zi2 < 4.0 && ++i < kMaxIterations);
 
 			// move to the next pixel
-			cr+=g_delta_cr;
-			*res++=uint8_t(i);
+			cr += g_delta_cr;
+			*res++ = uint8_t(i);
 		}
 
 		// move to the next line
-		ci-=g_delta_ci;
+		ci -= g_delta_ci;
 	}
 }
 
@@ -64,39 +63,50 @@ double elapsed_time_ms(timeval t1, timeval t2) {
 	return elapsedTime;
 }
 
+uint32_t next_power_of_two(uint32_t v) {
+	v--;
+	v |= v >> 1;
+	v |= v >> 2;
+	v |= v >> 4;
+	v |= v >> 8;
+	v |= v >> 16;
+	v++;
+	return v;
+}
+
 int main (int argc, char * const argv[]) {
 	// Mandelbrot fractal setup
-	enum {num_blocks=num_horizontal_blocks*num_vertical_blocks};
-	enum {num_fractals=2};
-	double mandelbrot_x=-2.0f;
-	double mandelbrot_y=-1.0f;
-	double mandelbrot_width=3.0f;
-	double mandelbrot_height=2.0f;
-	mandelbrot_y+=mandelbrot_height;	
-	
-	timeval t1, t2;
+	enum { kNumBlocks = kNumHorizontalBlocks * kNumVerticalBlocks };
+	enum { kNumFractals = 2 };
     
 	// Single threaded profiling
 	{
-		uint8_t* image_mt=(uint8_t*)malloc(image_width*image_height);
-		mandelbrot_block* blocks=(mandelbrot_block*)malloc(num_blocks*sizeof(mandelbrot_block));
+		timeval t1, t2;
+		double mandelbrot_x = -2.0f;
+		double mandelbrot_y = -1.0f;
+		double mandelbrot_width = 3.0f;
+		double mandelbrot_height = 2.0f;
+		mandelbrot_y += mandelbrot_height;
+		
+		uint8_t* image_mt = (uint8_t*)malloc(kImageWidth*kImageHeight);
+		mandelbrot_block* blocks = (mandelbrot_block*)malloc(kNumBlocks*sizeof(mandelbrot_block));
 		// setup image blocks and add jobs for multi-threaded test
         double elapsed = 0.0f;
 		{
-			for(unsigned i=0; i<num_fractals; ++i)
+			for(unsigned i = 0; i < kNumFractals; ++i)
 			{
-				printf("Calculating fractal %i/%i...\n", i+1, num_fractals);
+				printf("Calculating fractal %i/%i...\n", i+1, kNumFractals);
 				gettimeofday(&t1, 0);
-				g_delta_cr=mandelbrot_width/image_width;
-				g_delta_ci=mandelbrot_height/image_width;
-				unsigned bi=0;
-				for(unsigned by=0; by<num_vertical_blocks; ++by)
-					for(unsigned bx=0; bx<num_horizontal_blocks; ++bx)
+				g_delta_cr = mandelbrot_width/kImageWidth;
+				g_delta_ci = mandelbrot_height/kImageWidth;
+				unsigned bi = 0;
+				for(unsigned by = 0; by < kNumVerticalBlocks; ++by)
+					for(unsigned bx = 0; bx < kNumHorizontalBlocks; ++bx)
 				{
-					mandelbrot_block &block=blocks[bi++];
-					block.start_cr=mandelbrot_x+double(bx)*mandelbrot_width/num_horizontal_blocks;
-					block.start_ci=mandelbrot_y-double(by)*mandelbrot_height/num_vertical_blocks;
-					block.result=image_mt+bx*block_width+by*block_height*image_width;
+					mandelbrot_block &block = blocks[bi++];
+					block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
+					block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
+					block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
 					calculate_mandelbrot_block(&block);
 				}
 
@@ -105,10 +115,10 @@ int main (int argc, char * const argv[]) {
 				std::cout << e << std::endl;
 				elapsed += e;
 				
-				mandelbrot_x+=mandelbrot_width*0.05f;
-				mandelbrot_y-=mandelbrot_height*0.025f;
-				mandelbrot_width*=0.9f;
-				mandelbrot_height*=0.9f;
+				mandelbrot_x += mandelbrot_width * 0.05f;
+				mandelbrot_y -= mandelbrot_height * 0.025f;
+				mandelbrot_width *= 0.9f;
+				mandelbrot_height *= 0.9f;
 			}
 		}
 		free(blocks);
@@ -118,46 +128,50 @@ int main (int argc, char * const argv[]) {
 	
 	// Multi-threaded profiling
 	{
-		task_distributing_scheduler jq;
+		task_distributing_scheduler jq(next_power_of_two(kNumBlocks));
 	
-		uint8_t* image_mt=(uint8_t*)malloc(image_width*image_height);
-		mandelbrot_block* blocks=(mandelbrot_block*)malloc(num_blocks*sizeof(mandelbrot_block));
+		timeval t1, t2;
+		double mandelbrot_x = -2.0f;
+		double mandelbrot_y = -1.0f;
+		double mandelbrot_width = 3.0f;
+		double mandelbrot_height = 2.0f;
+		mandelbrot_y += mandelbrot_height;
+	
+		uint8_t* image_mt = (uint8_t*)malloc(kImageWidth*kImageHeight);
+		mandelbrot_block* blocks = (mandelbrot_block*)malloc(kNumBlocks*sizeof(mandelbrot_block));
 		// setup image blocks and add jobs for multi-threaded test
         double elapsed = 0.0f;
 		{
-			for(unsigned i=0; i<num_fractals; ++i)
+			for(unsigned i = 0; i < kNumFractals; ++i)
 			{
-				printf("Calculating fractal %i/%i...\n", i+1, num_fractals);
+				printf("Calculating fractal %i/%i...\n", i+1, kNumFractals);
 				gettimeofday(&t1, 0);
-				g_delta_cr=mandelbrot_width/image_width;
-				g_delta_ci=mandelbrot_height/image_width;
-				unsigned bi=0;
-				for(unsigned by=0; by<num_vertical_blocks; ++by)
-					for(unsigned bx=0; bx<num_horizontal_blocks; ++bx)
+				g_delta_cr = mandelbrot_width/kImageWidth;
+				g_delta_ci = mandelbrot_height/kImageWidth;
+				unsigned bi = 0;
+				for(unsigned by = 0; by < kNumVerticalBlocks; ++by)
+					for(unsigned bx = 0; bx < kNumHorizontalBlocks; ++bx)
 				{
-					mandelbrot_block &block=blocks[bi++];
-					block.start_cr=mandelbrot_x+double(bx)*mandelbrot_width/num_horizontal_blocks;
-					block.start_ci=mandelbrot_y-double(by)*mandelbrot_height/num_vertical_blocks;
-					block.result=image_mt+bx*block_width+by*block_height*image_width;
+					mandelbrot_block &block = blocks[bi++];
+					block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
+					block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
+					block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
 					jq.submit_task(calculate_mandelbrot_block, &block);
 				}
-			
+
 				jq.wait_for_all_tasks();
-				//jq.end_add_job(jtid);
-				//jq.wait_all_jobs();
 				gettimeofday(&t2, 0);
 				double e = elapsed_time_ms(t1, t2);
 				std::cout << e << std::endl;
 				elapsed += e;
 				
-
-				mandelbrot_x+=mandelbrot_width*0.05f;
-				mandelbrot_y-=mandelbrot_height*0.025f;
-				mandelbrot_width*=0.9f;
-				mandelbrot_height*=0.9f;
+				mandelbrot_x += mandelbrot_width * 0.05f;
+				mandelbrot_y -= mandelbrot_height * 0.025f;
+				mandelbrot_width *= 0.9f;
+				mandelbrot_height *= 0.9f;
 			}
 		}
-		
+
 		free(blocks);
 		free(image_mt);
 		std::cout << "Parallel time (ms): " << elapsed << std::endl;

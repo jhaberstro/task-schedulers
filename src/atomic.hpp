@@ -11,6 +11,7 @@
 #define ATOMIC_HPP
 
 #include <TargetConditionals.h>
+#include <cassert>
 
 
 void compiler_barrier() {
@@ -44,6 +45,9 @@ inline void store_release(T& out, T x) {
 // 64-bit only
 template< typename T >
 inline T exchange_pointer(T volatile* address, T value) {
+	//return __sync_lock_test_and_set(address, value);
+	
+	#if 0
 	T result;
 	asm volatile(
 		"lock; xchgq %0, %1\n\t"
@@ -51,9 +55,30 @@ inline T exchange_pointer(T volatile* address, T value) {
 		: "0" (value), "m"(*address)
 		: "memory"
 	);
+
+	return result;
+	#endif
+	
+	T compare, result = value;
+	do {
+		compare = result;
+		result = __sync_val_compare_and_swap(address, compare, value);
+	}
+	while(result != compare);
 	
 	return result;
 }
+
+
+enum memory_order
+{
+	memory_order_relaxed,
+    memory_order_consume,
+    memory_order_acquire,
+    memory_order_release,
+    memory_order_acq_rel,
+    memory_order_seq_cst
+};
 
 // sizeof(T) must be <= 8
 template< typename T >
@@ -63,9 +88,39 @@ public:
 	
 	typedef T value_type;
 	
-	value_type operator=(value_type v) {
-		store_release(value_, v);
-        return value_;
+public:
+	
+	value_type load(memory_order order) const volatile {
+		assert(order != memory_order_release && order != memory_order_acq_rel);
+		value_type v = value_;
+		compiler_barrier();
+		return v;
+	}
+	
+	void store(T value, memory_order order) volatile {
+		assert(
+			order != memory_order_consume &&
+			order != memory_order_acquire &&
+			order != memory_order_acq_rel
+		);
+		
+		if (order == memory_order_seq_cst) {
+			exchange_pointer(&value_, value);
+		}
+		else {
+			compiler_barrier();
+			value_ = value;
+		}
+	}
+	
+	bool compare_exchange_weak(T& compare, T exchange, memory_order order) volatile {
+		T previous = __sync_val_compare_and_swap(&value_, compare, exchange);
+		if (previous == compare) {
+			return true;
+		}
+		
+		compare = previous;
+		return false;
 	}
 	
 	value_type operator++() {
@@ -84,13 +139,9 @@ public:
 		return atomic_decrement(value_) + 1;
 	}
 	
-	operator value_type() const {
-		return load_acquire(value_);
-	}
-	
 private:
 	
-	T value_;
+	T volatile value_;
 };
 
 #endif // ATOMIC_HPP
