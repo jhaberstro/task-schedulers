@@ -1,4 +1,5 @@
 #include "task_distributing_scheduler.hpp"
+#include "work_stealing_lock_scheduler.hpp"
 #include <iostream>
 #include <sys/time.h>
 #include <cstring>
@@ -79,6 +80,7 @@ int main (int argc, char * const argv[]) {
 	enum { kNumBlocks = kNumHorizontalBlocks * kNumVerticalBlocks };
 	enum { kNumFractals = 2 };
     
+    #if 0
 	// Single threaded profiling
 	{
 		timeval t1, t2;
@@ -125,10 +127,11 @@ int main (int argc, char * const argv[]) {
 		free(image_mt);
 		std::cout << "Serial time (ms): " << elapsed << std::endl;
 	}
-	
+    #endif
+    
 	// Multi-threaded profiling
 	{
-		task_distributing_scheduler jq(next_power_of_two(kNumBlocks));
+        work_stealing_lock_scheduler jq;//(next_power_of_two(kNumBlocks));
 	
 		timeval t1, t2;
 		double mandelbrot_x = -2.0f;

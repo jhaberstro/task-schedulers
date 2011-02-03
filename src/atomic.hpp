@@ -14,6 +14,10 @@
 #include <cassert>
 
 
+void active_pause() {
+    asm volatile ("pause");
+}
+
 void compiler_barrier() {
 	asm volatile ("" ::: "memory");
 }
