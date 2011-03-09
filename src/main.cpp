@@ -1,5 +1,6 @@
 #include "task_distributing_scheduler.hpp"
-#include "work_stealing_lock_scheduler.hpp"
+//#include "work_stealing_lock_scheduler.hpp"
+#include "task_manager.hpp"
 #include <iostream>
 #include <sys/time.h>
 #include <cstring>
@@ -131,7 +132,8 @@ int main (int argc, char * const argv[]) {
     
 	// Multi-threaded profiling
 	{
-        work_stealing_lock_scheduler jq;//(next_power_of_two(kNumBlocks));
+        task_manager_t jq(next_power_of_two(kNumBlocks));
+        task_id_t parent = jq.create_task(0, 0);
 	
 		timeval t1, t2;
 		double mandelbrot_x = -2.0f;
@@ -159,10 +161,12 @@ int main (int argc, char * const argv[]) {
 					block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
 					block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
 					block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
-					jq.submit_task(calculate_mandelbrot_block, &block);
+					task_id_t id = jq.create_task(calculate_mandelbrot_block, &block);
+                    jq.add_child(parent, id);
 				}
-
-				jq.wait_for_all_tasks();
+                
+                jq.submit_current_transaction();
+				jq.wait(parent);
 				gettimeofday(&t2, 0);
 				double e = elapsed_time_ms(t1, t2);
 				std::cout << e << std::endl;

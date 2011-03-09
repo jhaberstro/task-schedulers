@@ -127,6 +127,11 @@ public:
 		return false;
 	}
 	
+	value_type exchange(T v, memory_order order) volatile {
+        T previous = exchange_pointer(&value_, v);
+        return previous;
+	}
+	
 	value_type operator++() {
 		return atomic_increment(value_);
 	}
@@ -141,6 +146,10 @@ public:
 	
 	value_type operator--(int) {
 		return atomic_decrement(value_) + 1;
+	}
+	
+	operator T() const {
+        return load(memory_order_seq_cst);
 	}
 	
 private:

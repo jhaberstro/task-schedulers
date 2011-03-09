@@ -35,53 +35,51 @@ public:
 private:
     
     std::deque< T > deque_;
-    mutex* mutex_;
+    mutex mutex_;
 };
 
 
 template< typename T >
 work_stealing_lock_deque< T >::work_stealing_lock_deque() {
-    mutex_ = new mutex();
 }
 
 template< typename T >
 work_stealing_lock_deque< T >::~work_stealing_lock_deque() {
-    delete mutex_;
 }
 
 template< typename T >
 inline bool work_stealing_lock_deque< T >::try_pop_back(typename work_stealing_lock_deque< T >::value_type& value) {
-    mutex_->lock();
+    mutex_.lock();
     if (deque_.empty()) {
-        mutex_->unlock();
+        mutex_.unlock();
         return false;
     }
     
     value = deque_.back();
     deque_.pop_back();
-    mutex_->unlock();
+    mutex_.unlock();
     return true;
 }
 
 template< typename T >
 inline bool work_stealing_lock_deque< T >::try_pop_front(typename work_stealing_lock_deque< T >::value_type& value) {
-    mutex_->lock();
+    mutex_.lock();
     if (deque_.empty()) {
-        mutex_->unlock();
+        mutex_.unlock();
         return false;
     }
     
     value = deque_.front();
     deque_.pop_front();
-    mutex_->unlock();
+    mutex_.unlock();
     return true;
 }
 
 template< typename T >
 inline void work_stealing_lock_deque< T >::push_back(typename work_stealing_lock_deque< T >::value_type const& value) {
-    mutex_->lock();
+    mutex_.lock();
     deque_.push_back(value);
-    mutex_->unlock();
+    mutex_.unlock();
 }
 
 #endif // WORK_STEALING_LOCK_DEQUE_HPP

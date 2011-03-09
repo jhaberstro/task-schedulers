@@ -26,9 +26,9 @@
 
 /* Begin PBXFileReference section */
 		08FB7796FE84155DC02AAC07 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		6353E289131C619D00AF0794 /* task_manager.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = task_manager.hpp; sourceTree = "<group>"; };
 		6385A7F012F1442B00801742 /* work_stealing_lock_deque.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = work_stealing_lock_deque.hpp; sourceTree = "<group>"; };
 		6385A80412F1484C00801742 /* work_stealing_lock_scheduler.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = work_stealing_lock_scheduler.hpp; sourceTree = "<group>"; };
-		63B0D33612EF786200BF9F4B /* mutex.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = mutex.hpp; sourceTree = "<group>"; };
 		63CBDF5612E80C3C00DBB918 /* mpsc_queue.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = mpsc_queue.hpp; sourceTree = "<group>"; };
 		63CBDF7712E8D66600DBB918 /* thread.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = thread.hpp; sourceTree = "<group>"; };
 		63CBDF9212E9F52200DBB918 /* task_distributing_scheduler.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = task_distributing_scheduler.hpp; sourceTree = "<group>"; };
@@ -63,6 +63,7 @@
 		08FB7795FE84155DC02AAC07 /* Source */ = {
 			isa = PBXGroup;
 			children = (
+				6353E289131C619D00AF0794 /* task_manager.hpp */,
 				63CBDF5612E80C3C00DBB918 /* mpsc_queue.hpp */,
 				63CBDF7712E8D66600DBB918 /* thread.hpp */,
 				08FB7796FE84155DC02AAC07 /* main.cpp */,
@@ -71,7 +72,6 @@
 				63CBE33812EA9BE500DBB918 /* scheduler_common.hpp */,
 				63CBE0BD12EA3D5600DBB918 /* atomic.hpp */,
 				63CBE2F712EA8D4500DBB918 /* mpmc_bounded_queue.hpp */,
-				63B0D33612EF786200BF9F4B /* mutex.hpp */,
 				6385A80412F1484C00801742 /* work_stealing_lock_scheduler.hpp */,
 			);
 			name = Source;
@@ -121,7 +121,14 @@
 			isa = PBXProject;
 			buildConfigurationList = 1DEB923508733DC60010E9CD /* Build configuration list for PBXProject "Task Scheduler" */;
 			compatibilityVersion = "Xcode 3.1";
+			developmentRegion = English;
 			hasScannedForEncodings = 1;
+			knownRegions = (
+				English,
+				Japanese,
+				French,
+				German,
+			);
 			mainGroup = 08FB7794FE84155DC02AAC07 /* Task Scheduler */;
 			projectDirPath = "";
 			projectRoot = "";

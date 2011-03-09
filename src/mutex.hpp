@@ -15,8 +15,7 @@
 
 class mutex
 {
-private:
-    
+private:    
     enum mutex_state_t
     {
         kUnlocked = 0,
@@ -50,33 +49,23 @@ inline mutex::mutex() {
 
 
 inline void mutex::lock() {
-    while (true) {
-        mutex_state_t state = state_.load(memory_order_acquire);
-        if (state == kLocked) {
-            active_pause();
-        }
-        else {
-            mutex_state_t newstate = kUnlocked;
-            bool success = state_.compare_exchange_weak(newstate, kLocked, memory_order_relaxed);
-            if (success) {
-                break;
-            }
-        }
-    }
+    static mutex_state_t oldstate_ = kUnlocked;
+    unsigned int delay = 1;
+    while()
 }
 
 inline bool mutex::try_lock() {
+    static mutex_state_t oldstate_ = kUnlocked;
     mutex_state_t state = state_.load(memory_order_acquire);
     if (state == kUnlocked) {
-        mutex_state_t newstate = kUnlocked;
-        return state_.compare_exchange_weak(newstate, kLocked, memory_order_relaxed);
+        return state_.compare_exchange_weak(oldstate_, kLocked, memory_order_acquire);
     }
     
     return false;
 }
 
 inline void mutex::unlock() {
-    state_.store(kUnlocked, memory_order_relaxed);
+    state_.store(kUnlocked, memory_order_release);
 }
 
 

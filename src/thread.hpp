@@ -38,9 +38,11 @@ namespace internal
 class thread
 {
 public:
-	
+		
 	static pthread_t current_id();
 	
+	static bool ids_equal(pthread_t lhs, pthread_t rhs);
+    
 	static void sleep(uint64_t seconds, uint64_t nanoseconds);
     
     static void yield();
@@ -82,6 +84,11 @@ private:
 inline pthread_t thread::current_id() {
 	return pthread_self();
 }
+
+inline bool thread::ids_equal(pthread_t lhs, pthread_t rhs) {
+    return pthread_equal(lhs, rhs) != 0;
+}
+
 
 inline void thread::sleep(uint64_t seconds, uint64_t nanoseconds) {
     assert(seconds <= std::numeric_limits< time_t >::max());

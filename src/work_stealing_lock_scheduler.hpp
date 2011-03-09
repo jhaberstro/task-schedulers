@@ -44,14 +44,15 @@ private:
             int failure = 0;
             work_stealing_lock_scheduler* scheduler = context->scheduler_;
 			while (true) {
-			    if (!context->scheduler_->kill_) {
+			    if (context->scheduler_->kill_) {
 			        break;
 			    }
 			    
-                worker_thread_data& victim = scheduler->workers_[context->victim_];
+                worker_thread_data& victim = *scheduler->workers_[context->victim_];
                 internal::task task;
     			if (victim.tasks_.try_pop_back(task)) {
-                    context->tasks_.push_back(task);
+                    task.func(task.context);
+                    //context->tasks_.push_back(task);
                     break;
     			}
     			
@@ -76,19 +77,22 @@ public:
 		}
 		
 		for (int i = 0; i < numThreads; ++i) {
-			worker_thread_data worker;
-			worker.thread_ = thread(worker_thread_func);
-			worker.scheduler_ = this;
-            worker.victim_ = (i + 1) % numThreads;
+			worker_thread_data* worker = new worker_thread_data;
+			worker->thread_ = thread(worker_thread_func);
+			worker->scheduler_ = this;
+            worker->victim_ = (i + 1) % numThreads;
 			workers_.push_back(worker);
-			workers_[i].thread_.start(&workers_[i]);
 		}
+		
+        for (int i = 0; i < numThreads; ++i) {
+            workers_[i]->thread_.start(workers_[i]);
+        }
     }
     
     ~work_stealing_lock_scheduler() {
 		kill_ = true;
 		for (int i = 0; i < workers_.size(); ++i) {
-			workers_[i].thread_.join();
+			workers_[i]->thread_.join();
 		}
 	}
 	
@@ -116,13 +120,22 @@ public:
 	}
 	
 	void submit_task(task_function func, void* context) {
-	    internal::task task = { func, context };
-        workers_[distributee_].tasks_.push_back(task);
+        internal::task task = { func, context };
+        pthread_t id = thread::current_id();
+        for (int i = 0; i < workers_.size(); ++i) {
+            if (thread::ids_equal(id, workers_[i]->thread_.id())) {
+                workers_[i]->tasks_.push_back(task);
+                return;
+            }
+        }
+        
+        workers_[distributee_]->tasks_.push_back(task);
+        distributee_ = (distributee_ + 1) % workers_.size();
 	}
     
 protected:
     
-    std::vector< worker_thread_data > workers_;
+    std::vector< worker_thread_data* > workers_;
     atomic< size_t > numTasks_;
     size_t distributee_;
 	bool kill_;
