@@ -37,7 +37,8 @@ public:
 		head_ = tail_ = new node;
 	}
 	
-	void push(node* n) {
+	void push(T& v) {
+        node* n = new node(v);
 		n->next = 0;
 		node* previous = exchange_pointer(&head_, n);
 		previous->next = n;

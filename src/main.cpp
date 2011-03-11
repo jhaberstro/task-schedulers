@@ -5,25 +5,83 @@
 #include <sys/time.h>
 #include <cstring>
 
-enum { kBlockWidth = 8, kBlockHeight = 8 };
+
+double elapsed_time_ms(timeval t1, timeval t2) {
+	double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;	// sec to ms
+    elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   	// us to ms
+	return elapsedTime;
+}
+
+uint32_t next_power_of_two(uint32_t v) {
+	v--;
+	v |= v >> 1;
+	v |= v >> 2;
+	v |= v >> 4;
+	v |= v >> 8;
+	v |= v >> 16;
+	v++;
+	return v;
+}
+
+//
+// Dependency tests
+//
+struct child1_context
+{
+    int num_children;
+    int volatile counter;
+};
+
+void child1(void* data) {
+    atomic_increment(static_cast< child1_context* >(data)->counter);
+}
+
+void dependent1(void* data) {
+    child1_context* context = static_cast< child1_context* >(data);
+    assert(context->counter = context->num_children);
+}
+
+void dependency_test1() {
+    std::cout << "Starting dependency test 1" << std::endl;
+    
+    enum { kTestRuns = 1000 };
+    for (int test = 0; test < kTestRuns; ++test) {
+        enum { kChildren = 1000 };
+        task_manager jq(next_power_of_two(kChildren));
+        task_id parentid = jq.create_task(0, 0);
+        
+        child1_context ctx = { kChildren, 0 };
+        for (int i = 0; i < kChildren; ++i) {
+            task_id childid = jq.create_task(child1, &ctx);
+            jq.add_child(parentid, childid);
+        }
+        
+        task_id dependentid = jq.create_task(dependent1, &ctx);
+        jq.add_dependency(parentid, dependentid);
+        jq.submit_current_transaction();
+        jq.wait(dependentid);
+    }
+    
+    std::cout << "Dependency test 1 succedded!\nEnding dependency test 1\n\n";
+}
+
+
+//============================================================================
+// Mandelbrot test
+//============================================================================
+enum { kBlockWidth = 16, kBlockHeight = 16 };
 enum { kImageWidth = 4096, kImageHeight = 4096 };
 //----
 enum { kNumHorizontalBlocks = kImageWidth / kBlockWidth };
 enum { kNumVerticalBlocks = kImageHeight / kBlockHeight };
 double g_delta_cr = 0.0;
 double g_delta_ci = 0.0;
-//----------------------------------------------------------------------------
 
-
-//============================================================================
-// Mandelbrot fractal calculation
-//============================================================================
 struct mandelbrot_block
 {
 	double start_cr, start_ci;
 	uint8_t *result;
 };
-//----
 
 void calculate_mandelbrot_block(void *data)
 {
@@ -59,29 +117,13 @@ void calculate_mandelbrot_block(void *data)
 	}
 }
 
-double elapsed_time_ms(timeval t1, timeval t2) {
-	double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;	// sec to ms
-    elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   	// us to ms
-	return elapsedTime;
-}
-
-uint32_t next_power_of_two(uint32_t v) {
-	v--;
-	v |= v >> 1;
-	v |= v >> 2;
-	v |= v >> 4;
-	v |= v >> 8;
-	v |= v >> 16;
-	v++;
-	return v;
-}
-
-int main (int argc, char * const argv[]) {
-	// Mandelbrot fractal setup
-	enum { kNumBlocks = kNumHorizontalBlocks * kNumVerticalBlocks };
-	enum { kNumFractals = 2 };
+void mandelbrot_test() {
+    std::cout << "Starting mandelbrot test." << std::endl;
     
-    #if 0
+    // Mandelbrot fractal setup
+	enum { kNumBlocks = kNumHorizontalBlocks * kNumVerticalBlocks };
+	enum { kNumFractals = 4 };
+    
 	// Single threaded profiling
 	{
 		timeval t1, t2;
@@ -105,14 +147,14 @@ int main (int argc, char * const argv[]) {
 				unsigned bi = 0;
 				for(unsigned by = 0; by < kNumVerticalBlocks; ++by)
 					for(unsigned bx = 0; bx < kNumHorizontalBlocks; ++bx)
-				{
-					mandelbrot_block &block = blocks[bi++];
-					block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
-					block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
-					block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
-					calculate_mandelbrot_block(&block);
-				}
-
+                    {
+                        mandelbrot_block &block = blocks[bi++];
+                        block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
+                        block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
+                        block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
+                        calculate_mandelbrot_block(&block);
+                    }
+                
 				gettimeofday(&t2, 0);
 				double e = elapsed_time_ms(t1, t2);
 				std::cout << e << std::endl;
@@ -128,20 +170,18 @@ int main (int argc, char * const argv[]) {
 		free(image_mt);
 		std::cout << "Serial time (ms): " << elapsed << std::endl;
 	}
-    #endif
     
 	// Multi-threaded profiling
 	{
-        task_manager_t jq(next_power_of_two(kNumBlocks));
-        task_id_t parent = jq.create_task(0, 0);
-	
+        task_manager jq(next_power_of_two(kNumBlocks));
+        
 		timeval t1, t2;
 		double mandelbrot_x = -2.0f;
 		double mandelbrot_y = -1.0f;
 		double mandelbrot_width = 3.0f;
 		double mandelbrot_height = 2.0f;
 		mandelbrot_y += mandelbrot_height;
-	
+        
 		uint8_t* image_mt = (uint8_t*)malloc(kImageWidth*kImageHeight);
 		mandelbrot_block* blocks = (mandelbrot_block*)malloc(kNumBlocks*sizeof(mandelbrot_block));
 		// setup image blocks and add jobs for multi-threaded test
@@ -149,6 +189,7 @@ int main (int argc, char * const argv[]) {
 		{
 			for(unsigned i = 0; i < kNumFractals; ++i)
 			{
+                task_id parent = jq.create_task(0, 0);
 				printf("Calculating fractal %i/%i...\n", i+1, kNumFractals);
 				gettimeofday(&t1, 0);
 				g_delta_cr = mandelbrot_width/kImageWidth;
@@ -156,14 +197,14 @@ int main (int argc, char * const argv[]) {
 				unsigned bi = 0;
 				for(unsigned by = 0; by < kNumVerticalBlocks; ++by)
 					for(unsigned bx = 0; bx < kNumHorizontalBlocks; ++bx)
-				{
-					mandelbrot_block &block = blocks[bi++];
-					block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
-					block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
-					block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
-					task_id_t id = jq.create_task(calculate_mandelbrot_block, &block);
-                    jq.add_child(parent, id);
-				}
+                    {
+                        mandelbrot_block &block = blocks[bi++];
+                        block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
+                        block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
+                        block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
+                        task_id id = jq.create_task(calculate_mandelbrot_block, &block);
+                        jq.add_child(parent, id);
+                    }
                 
                 jq.submit_current_transaction();
 				jq.wait(parent);
@@ -178,12 +219,17 @@ int main (int argc, char * const argv[]) {
 				mandelbrot_height *= 0.9f;
 			}
 		}
-
+        
 		free(blocks);
 		free(image_mt);
 		std::cout << "Parallel time (ms): " << elapsed << std::endl;
-		
 	}
+    
+    std::cout << "Ending mandelbrot test.\n\n";
+}
 
+int main (int argc, char * const argv[]) {    
+    dependency_test1();
+    mandelbrot_test();
     return 0;
 }
