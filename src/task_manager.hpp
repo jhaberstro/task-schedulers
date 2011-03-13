@@ -24,7 +24,7 @@ struct task_t
     task_work_item work;
     task_id parent;
     int32_t open_work_items;
-    task_id dependent;
+    std::vector< task_id > dependents;
     int32_t dependency_fulfilled;
 };
 
@@ -110,7 +110,6 @@ public:
         newtask->work.cpu_work.context = context;
         newtask->parent = kNullTask;
         newtask->open_work_items = 2;
-        newtask->dependent = kNullTask;
         newtask->dependency_fulfilled = 0;
         
         if (newtask->id == open_tasks.size()) {
@@ -137,9 +136,8 @@ public:
     void add_dependency(task_id taskid, task_id dependentid) {
         task_t* parent = open_tasks[taskid];
         task_t* dependent = open_tasks[dependentid];
-        assert(parent->dependent == kNullTask);
-        parent->dependent = dependentid;
-        dependent->dependency_fulfilled = 1;
+        parent->dependents.push_back(dependentid);
+        dependent->dependency_fulfilled += 1;
         
     }
     
@@ -168,7 +166,7 @@ public:
         
         while (task->open_work_items > 0) {    
             // scan through all tasks that have dependencies
-            // and enqueue them if their dependency has completed.
+            // and enqueue them if their dependencies has completed.
             for (uint32_t i = 0; i < dependency_tasks.size(); ++i) {
                 task_t* dependenttask = dependency_tasks[i];
                 if (dependenttask->dependency_fulfilled == 0) {
@@ -205,8 +203,8 @@ private:
             task_t* deletion = current;
             int items = atomic_decrement(current->open_work_items);
             if (items == 0) {
-                if (current->dependent != kNullTask) {
-                    atomic_decrement(open_tasks[current->dependent]->dependency_fulfilled);
+                for (int i = 0; i < current->dependents.size(); ++i) {
+                    atomic_decrement(open_tasks[current->dependents[i]]->dependency_fulfilled);
                 }
                 
                 if (current->parent != kNullTask) {

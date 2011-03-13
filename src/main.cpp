@@ -23,9 +23,9 @@ uint32_t next_power_of_two(uint32_t v) {
 	return v;
 }
 
-//
-// Dependency tests
-//
+//============================================================================
+// Dependency test 1
+//============================================================================
 struct child1_context
 {
     int num_children;
@@ -64,6 +64,146 @@ void dependency_test1() {
     
     std::cout << "Dependency test 1 succedded!\nEnding dependency test 1\n\n";
 }
+
+//============================================================================
+// Dependency test 2
+//============================================================================
+struct dependency_test2_global_context
+{
+    mpsc_queue< int > executionOrder;
+};
+
+struct dependency_test2_local_context
+{
+    dependency_test2_global_context* global_context;
+    int id;
+};
+
+void dependency_test2_func(void* data) {
+    dependency_test2_local_context* context = static_cast< dependency_test2_local_context* >(data);
+    context->global_context->executionOrder.push(context->id);
+}
+
+void dependency_test2() {
+    std::cout << "Starting dependency test 2" << std::endl;
+    
+    enum { kTestRuns = 5 };
+    for (int test = 0; test < kTestRuns; ++test) {
+
+        task_manager jq(8);
+        
+        // Create the parent
+        dependency_test2_global_context global_ctx;
+        dependency_test2_local_context parent_ctx = { &global_ctx, 0 };
+        task_id parentid = jq.create_task(dependency_test2_func, &parent_ctx);
+        
+        // Create first child
+        dependency_test2_local_context child1_ctx = { &global_ctx, 1 };
+        task_id child1id = jq.create_task(dependency_test2_func, &child1_ctx);
+        jq.add_child(parentid, child1id);
+        
+        // Create the second child
+        dependency_test2_local_context child2_ctx = { &global_ctx, 2 };
+        task_id child2id = jq.create_task(dependency_test2_func, &child2_ctx);
+        jq.add_child(parentid, child2id);
+        
+        // Create children's dependent task
+        dependency_test2_local_context child_dependent_ctx = { &global_ctx, 3 };
+        task_id child_dependentid = jq.create_task(dependency_test2_func, &child_dependent_ctx);
+        jq.add_dependency(child2id, child_dependentid);
+        jq.add_dependency(child1id, child_dependentid);
+        jq.add_child(parentid, child_dependentid);
+        
+        // Add parent's dependent task
+        dependency_test2_local_context parent_dependent_ctx = { &global_ctx, 4 };
+        task_id parent_dependentid = jq.create_task(dependency_test2_func, &parent_dependent_ctx);
+        jq.add_dependency(parentid, parent_dependentid);
+        
+        jq.submit_current_transaction();
+        jq.wait(parent_dependentid);
+        
+        int i = 1;
+        mpsc_queue< int >::node* n = 0;
+        while ((n = global_ctx.executionOrder.pop()) != 0) {
+            std::cout << i << ".) " << n->value << std::endl;
+            ++i;
+        }
+        
+        std::cout << std::endl;
+    }
+    
+    std::cout << "Ending dependency test 2\n\n";
+}
+
+//============================================================================
+// Dependency test 3
+//============================================================================
+struct dependency_test3_global_context
+{
+    mpsc_queue< int > executionOrder;
+};
+
+struct dependency_test3_local_context
+{
+    dependency_test2_global_context* global_context;
+    int id;
+};
+
+void dependency_test3() {
+    std::cout << "Starting dependency test 3" << std::endl;
+    
+    enum { kTestRuns = 5 };
+    for (int test = 0; test < kTestRuns; ++test) {
+        
+        task_manager jq(8);
+        
+        // Create the parent
+        dependency_test2_global_context global_ctx;
+        dependency_test2_local_context parent_ctx = { &global_ctx, 0 };
+        task_id parentid = jq.create_task(dependency_test2_func, &parent_ctx);
+        
+        // Create sub-parent
+        dependency_test2_local_context subparent_ctx = { &global_ctx, 1 };
+        task_id subparentid = jq.create_task(dependency_test2_func, &subparent_ctx);
+        jq.add_child(parentid, subparentid);
+        
+        // Create first child
+        dependency_test2_local_context child1_ctx = { &global_ctx, 2 };
+        task_id child1id = jq.create_task(dependency_test2_func, &child1_ctx);
+        jq.add_child(subparentid, child1id);
+        
+        // Create the second child
+        dependency_test2_local_context child2_ctx = { &global_ctx, 3 };
+        task_id child2id = jq.create_task(dependency_test2_func, &child2_ctx);
+        jq.add_child(subparentid, child2id);
+        
+        // Create children's dependent task
+        dependency_test2_local_context child_dependent_ctx = { &global_ctx, 4 };
+        task_id child_dependentid = jq.create_task(dependency_test2_func, &child_dependent_ctx);
+        jq.add_dependency(subparentid, child_dependentid);
+        jq.add_child(parentid, child_dependentid);
+        
+        // Add parent's dependent task
+        dependency_test2_local_context parent_dependent_ctx = { &global_ctx, 5 };
+        task_id parent_dependentid = jq.create_task(dependency_test2_func, &parent_dependent_ctx);
+        jq.add_dependency(parentid, parent_dependentid);
+        
+        jq.submit_current_transaction();
+        jq.wait(parent_dependentid);
+        
+        int i = 1;
+        mpsc_queue< int >::node* n = 0;
+        while ((n = global_ctx.executionOrder.pop()) != 0) {
+            std::cout << i << ".) " << n->value << std::endl;
+            ++i;
+        }
+        
+        std::cout << std::endl;
+    }
+    
+    std::cout << "Ending dependency test 3\n\n";
+}
+
 
 
 //============================================================================
@@ -124,6 +264,7 @@ void mandelbrot_test() {
 	enum { kNumBlocks = kNumHorizontalBlocks * kNumVerticalBlocks };
 	enum { kNumFractals = 4 };
     
+    #if 0
 	// Single threaded profiling
 	{
 		timeval t1, t2;
@@ -170,6 +311,7 @@ void mandelbrot_test() {
 		free(image_mt);
 		std::cout << "Serial time (ms): " << elapsed << std::endl;
 	}
+    #endif
     
 	// Multi-threaded profiling
 	{
@@ -230,6 +372,7 @@ void mandelbrot_test() {
 
 int main (int argc, char * const argv[]) {    
     dependency_test1();
+    dependency_test2();
     mandelbrot_test();
     return 0;
 }

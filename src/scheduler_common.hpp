@@ -13,6 +13,8 @@
 #include <sys/types.h>
 #include <sys/sysctl.h>
 
+#define CACHE_LINE_SIZE 64
+
 typedef void (*task_function) (void*);
 
 namespace internal
