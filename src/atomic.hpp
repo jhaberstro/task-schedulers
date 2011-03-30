@@ -12,7 +12,7 @@
 
 #include <TargetConditionals.h>
 #include <cassert>
-
+#include <stdint.h>
 
 void active_pause() {
     asm volatile ("pause");
@@ -46,23 +46,8 @@ inline void store_release(T& out, T x) {
 	out = x;
 }
 
-// 64-bit only
 template< typename T >
 inline T exchange_pointer(T volatile* address, T value) {
-	//return __sync_lock_test_and_set(address, value);
-	
-	#if 0
-	T result;
-	asm volatile(
-		"lock; xchgq %0, %1\n\t"
-		: "=r" (result), "=m" (*address)
-		: "0" (value), "m"(*address)
-		: "memory"
-	);
-
-	return result;
-	#endif
-	
 	T compare, result = value;
 	do {
 		compare = result;
@@ -71,6 +56,25 @@ inline T exchange_pointer(T volatile* address, T value) {
 	while(result != compare);
 	
 	return result;
+}
+
+static inline uint64_t exchange64(void *ptr, uint64_t x)
+{
+	__asm__ __volatile__("xchgq %0,%1"
+                         :"=r" ((uint64_t) x)
+                         :"m" (*(volatile uint64_t *)ptr), "0" (x)
+                         :"memory");
+    
+	return x;
+}
+
+inline uint32_t exchange32(void* ptr, uint32_t x) {
+	__asm__ __volatile__("xchgl %0,%1"
+                         :"=r" ((uint32_t) x)
+                         :"m" (*(volatile uint32_t *)ptr), "0" (x)
+                         :"memory");
+    
+	return x;
 }
 
 

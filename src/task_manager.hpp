@@ -1,6 +1,7 @@
 #ifndef TASK_HPP
 #define TASK_HPP
 
+#include "spin_lock.hpp"
 #include "mpmc_bounded_queue.hpp"
 #include "mpsc_queue.hpp"
 #include "thread.hpp"
@@ -24,9 +25,16 @@ struct task_t
     task_work_item work;
     task_id parent;
     int32_t open_work_items;
-    std::vector< task_id > dependents;
-    int32_t dependency_fulfilled;
+    task_id depends_on;
 };
+
+void task_initialize(task_t* task) {
+    task->id = kNullTask;
+    task->work.cpu_work.func = 0;
+    task->work.cpu_work.context = 0;
+    task->open_work_items = 0;
+    task->depends_on = kNullTask;
+}
 
 class task_manager
 {    
@@ -61,13 +69,22 @@ private:
 	
 public:
     
-    task_manager(size_t maxTasks, size_t numThreads = 0)
+    task_manager(size_t maxTasks, size_t numThreads = -1)
     : tasks(maxTasks),
-	  kill(false) {
-		if (numThreads == 0) {
+      max_tasks(maxTasks),
+      num_tasks(0),
+	  kill(false),
+      waiting_on_task(false) {
+		if (numThreads == -1) {
 			numThreads = internal::number_of_cores() - 1;
 		}
-
+        
+        open_tasks = new task_t[maxTasks];
+        for (int i = 0; i < maxTasks; ++i) {
+            availableIds.push(i);
+            task_initialize(&open_tasks[i]);
+        }
+          
 		for (int i = 0; i < numThreads; ++i) {
 			worker_thread_data worker;
 			worker.thread_ = thread(worker_thread_func);
@@ -79,14 +96,8 @@ public:
     
     ~task_manager() {
         stop();
-        for (int i = 0; i < open_tasks.size(); ++i) {
-            task_t* t = open_tasks[i];
-            if (t) {
-                delete t;
-                t = 0;
-            }
-        }
-        
+        assert(num_tasks == 0);
+        delete [] open_tasks;
         mpsc_queue< task_id >::node* n = 0;
         while ((n = availableIds.pop()) != 0) {
             delete n;
@@ -94,88 +105,68 @@ public:
         }
     }
     
-    task_id create_task(cpu_task_func func, void* context) {
-        task_t* newtask = new task_t;
-        
+    // Help functions
+    void add(cpu_task_func func, void* context) {
+        end_add(begin_add(func, context));
+    }
+    
+    task_id begin_add(cpu_task_func func, void* context) {
+        atomic_increment(num_tasks);        
         mpsc_queue< task_id >::node* popped = availableIds.pop();
-        if (popped == 0) {
-            newtask->id = open_tasks.size();
-        }
-        else {
-            newtask->id = popped->value;
-            delete popped;
-        }
+        assert(popped != 0);
+        task_id id = popped->value;
+        delete popped;
+        
+        task_t* newtask = &open_tasks[id];
+        assert(newtask->id == kNullTask);
+        newtask->id = id;
         
         newtask->work.cpu_work.func = func;
         newtask->work.cpu_work.context = context;
         newtask->parent = kNullTask;
         newtask->open_work_items = 2;
-        newtask->dependency_fulfilled = 0;
+        newtask->depends_on = kNullTask;
         
-        if (newtask->id == open_tasks.size()) {
-            open_tasks.push_back(newtask);
-        }
-        else {
-            open_tasks[newtask->id] = newtask;
-        }
-        
-        current_transaction.push_back(newtask->id);
         return newtask->id;
     }
     
+    void end_add(task_id id) {
+        task_t* task = &open_tasks[id];
+        decrement_task(id);
+        if (task->depends_on == kNullTask) {
+            tasks.enqueue(task);
+        }
+        else {
+            dependency_lock.lock();
+            dependents_hold.push_back(task);
+            dependency_lock.unlock();
+        }
+    }
+    
     void add_child(task_id parentid, task_id childid) {
-        task_t* parent = open_tasks[parentid];
-        task_t* child = open_tasks[childid];
+        task_t* parent = &open_tasks[parentid];
+        task_t* child = &open_tasks[childid];
         
         assert(child->parent == kNullTask);
         //assert(child->dependency == kNullTask);
         child->parent = parentid;
-        parent->open_work_items += 1;
+        atomic_increment(parent->open_work_items);
     }
     
     void add_dependency(task_id taskid, task_id dependentid) {
-        task_t* parent = open_tasks[taskid];
-        task_t* dependent = open_tasks[dependentid];
-        parent->dependents.push_back(dependentid);
-        dependent->dependency_fulfilled += 1;
-        
+        task_t* dependent = &open_tasks[dependentid];
+        assert(dependent->depends_on == kNullTask);
+        dependent->depends_on = taskid;
     }
     
-    void submit_current_transaction() {
-        for (int i = 0; i < current_transaction.size(); ++i) {
-            task_id id = current_transaction[i];
-            task_t* task = open_tasks[id];
-            if (task->dependency_fulfilled == 0) {
-                tasks.enqueue(task);
-            }
-            else {
-                dependency_tasks.push_back(task);
-            }
-            
-            decrement_task(id);
-        }
-        
-        current_transaction.clear();
-    }
-    
+    // Can only be called on the main thread currently
     void wait(task_id id) {
-        task_t* task = open_tasks[id];
-        if (task == 0) {
-            return;
+        if (!waiting_on_task) {
+            waiting_on_task = true;
         }
         
-        while (task->open_work_items > 0) {    
-            // scan through all tasks that have dependencies
-            // and enqueue them if their dependencies has completed.
-            for (uint32_t i = 0; i < dependency_tasks.size(); ++i) {
-                task_t* dependenttask = dependency_tasks[i];
-                if (dependenttask->dependency_fulfilled == 0) {
-                    std::swap(dependency_tasks[i], dependency_tasks.back());
-                    dependency_tasks.pop_back();
-                    tasks.enqueue(dependenttask);
-                }
-            }
-            
+        task_t* task = &open_tasks[id];
+        while (task->open_work_items > 0) {
             // help out
             task_t* run = 0;
             if (tasks.dequeue(run) == true) {
@@ -184,8 +175,12 @@ public:
                 }
 
                 decrement_task(run->id);
-            } 
+            }
+            
+            evaluate_dependencies();
         }
+        
+        waiting_on_task = false;
     }
     
     void stop() {
@@ -198,27 +193,27 @@ public:
 private:
     
     void decrement_task(task_id task) {        
-        task_t* current = open_tasks[task];
+        task_t* current = &open_tasks[task];
         while (current != 0) {
+            if (!waiting_on_task) {
+                evaluate_dependencies();
+            }
+            
             task_t* deletion = current;
             int items = atomic_decrement(current->open_work_items);
             if (items == 0) {
-                for (int i = 0; i < current->dependents.size(); ++i) {
-                    atomic_decrement(open_tasks[current->dependents[i]]->dependency_fulfilled);
-                }
-                
                 if (current->parent != kNullTask) {
-                    current = open_tasks[current->parent];
+                    current = &open_tasks[current->parent];
                 }
                 else {
                     current = 0;
                 }
                                 
                 // remove the task from the open_list
-                availableIds.push(deletion->id);
-                
-                open_tasks[deletion->id] = 0;
-                delete deletion;
+                atomic_decrement(num_tasks);
+                task_id deletedid = deletion->id;
+                task_initialize(deletion);
+                availableIds.push(deletedid);
             }
             else {
                 current = 0;
@@ -226,15 +221,42 @@ private:
         }
     }
     
+    void evaluate_dependencies() {
+        if (dependency_lock.try_lock()) {
+            std::queue< int > deletions;
+            for (int i = 0; i < dependents_hold.size(); ++i) {
+                task_t* dependent = dependents_hold[i];
+                task_t* depends_on = &open_tasks[dependent->depends_on];
+                if (depends_on->open_work_items <= 0) {
+                    deletions.push(i);
+                    tasks.enqueue(dependent);
+                }
+            }
+
+            while (deletions.empty() == false) {
+                int index = deletions.back();
+                deletions.pop();
+                dependents_hold.erase(dependents_hold.begin() + index);
+            }
+            
+            dependency_lock.unlock();
+        }
+    }
+    
+    //void verify_dag()
+    
 private:
     
     mpsc_queue< task_id > availableIds;
-    std::vector< task_t* > open_tasks;
-    std::vector< task_id > current_transaction;
-    std::vector< task_t* > dependency_tasks;
     mpmc_bounded_queue< task_t* > tasks;
+    std::vector< task_t* > dependents_hold;
+    spin_lock dependency_lock;
     std::vector< worker_thread_data > workers_;
+    task_t* open_tasks;
+    int32_t max_tasks;
+    int32_t num_tasks;
 	bool kill;
+    bool waiting_on_task;
 };
 
 #endif // TASK_HPP

@@ -33,6 +33,7 @@ struct child1_context
 };
 
 void child1(void* data) {
+    //std::cout << "child1\n";
     atomic_increment(static_cast< child1_context* >(data)->counter);
 }
 
@@ -44,21 +45,24 @@ void dependent1(void* data) {
 void dependency_test1() {
     std::cout << "Starting dependency test 1" << std::endl;
     
-    enum { kTestRuns = 1000 };
+    enum { kTestRuns = 1 };
     for (int test = 0; test < kTestRuns; ++test) {
         enum { kChildren = 1000 };
-        task_manager jq(next_power_of_two(kChildren));
-        task_id parentid = jq.create_task(0, 0);
+        child1_context ctx = { kChildren + 1, 0 };
+        task_manager jq(next_power_of_two(kChildren + 2), 1);
+        task_id parentid = jq.begin_add(child1, &ctx);
         
-        child1_context ctx = { kChildren, 0 };
         for (int i = 0; i < kChildren; ++i) {
-            task_id childid = jq.create_task(child1, &ctx);
+            task_id childid = jq.begin_add(child1, &ctx);
             jq.add_child(parentid, childid);
+            jq.end_add(childid);
         }
         
-        task_id dependentid = jq.create_task(dependent1, &ctx);
+        task_id dependentid = jq.begin_add(dependent1, &ctx);
         jq.add_dependency(parentid, dependentid);
-        jq.submit_current_transaction();
+        jq.end_add(dependentid);
+        
+        jq.end_add(parentid);
         jq.wait(dependentid);
     }
     
@@ -85,6 +89,7 @@ void dependency_test2_func(void* data) {
 }
 
 void dependency_test2() {
+#if 0
     std::cout << "Starting dependency test 2" << std::endl;
     
     enum { kTestRuns = 5 };
@@ -133,6 +138,7 @@ void dependency_test2() {
     }
     
     std::cout << "Ending dependency test 2\n\n";
+#endif
 }
 
 //============================================================================
@@ -145,7 +151,7 @@ struct dependency_test3_global_context
 
 struct dependency_test3_local_context
 {
-    dependency_test2_global_context* global_context;
+    dependency_test3_global_context* global_context;
     int id;
 };
 
@@ -160,35 +166,38 @@ void dependency_test3() {
         // Create the parent
         dependency_test2_global_context global_ctx;
         dependency_test2_local_context parent_ctx = { &global_ctx, 0 };
-        task_id parentid = jq.create_task(dependency_test2_func, &parent_ctx);
-        
-        // Create sub-parent
-        dependency_test2_local_context subparent_ctx = { &global_ctx, 1 };
-        task_id subparentid = jq.create_task(dependency_test2_func, &subparent_ctx);
-        jq.add_child(parentid, subparentid);
-        
-        // Create first child
-        dependency_test2_local_context child1_ctx = { &global_ctx, 2 };
-        task_id child1id = jq.create_task(dependency_test2_func, &child1_ctx);
-        jq.add_child(subparentid, child1id);
-        
-        // Create the second child
-        dependency_test2_local_context child2_ctx = { &global_ctx, 3 };
-        task_id child2id = jq.create_task(dependency_test2_func, &child2_ctx);
-        jq.add_child(subparentid, child2id);
-        
-        // Create children's dependent task
-        dependency_test2_local_context child_dependent_ctx = { &global_ctx, 4 };
-        task_id child_dependentid = jq.create_task(dependency_test2_func, &child_dependent_ctx);
-        jq.add_dependency(subparentid, child_dependentid);
-        jq.add_child(parentid, child_dependentid);
-        
-        // Add parent's dependent task
-        dependency_test2_local_context parent_dependent_ctx = { &global_ctx, 5 };
-        task_id parent_dependentid = jq.create_task(dependency_test2_func, &parent_dependent_ctx);
-        jq.add_dependency(parentid, parent_dependentid);
-        
-        jq.submit_current_transaction();
+        task_id parentid = jq.begin_add(dependency_test2_func, &parent_ctx);
+            // Create sub-parent
+            dependency_test2_local_context subparent_ctx = { &global_ctx, 1 };
+            task_id subparentid = jq.begin_add(dependency_test2_func, &subparent_ctx);
+                jq.add_child(parentid, subparentid);
+            
+                // Create first child
+                dependency_test2_local_context child1_ctx = { &global_ctx, 2 };
+                task_id child1id = jq.begin_add(dependency_test2_func, &child1_ctx);
+                jq.add_child(subparentid, child1id);
+                jq.end_add(child1id);
+                
+                // Create the second child
+                dependency_test2_local_context child2_ctx = { &global_ctx, 3 };
+                task_id child2id = jq.begin_add(dependency_test2_func, &child2_ctx);
+                jq.add_child(subparentid, child2id);
+                jq.end_add(child2id);
+
+                // Create children's dependent task
+                dependency_test2_local_context child_dependent_ctx = { &global_ctx, 4 };
+                task_id child_dependentid = jq.begin_add(dependency_test2_func, &child_dependent_ctx);
+                jq.add_dependency(subparentid, child_dependentid);
+                jq.add_child(parentid, child_dependentid);
+                jq.end_add(child_dependentid);
+            jq.end_add(subparentid);
+            
+            // Add parent's dependent task
+            dependency_test2_local_context parent_dependent_ctx = { &global_ctx, 5 };
+            task_id parent_dependentid = jq.begin_add(dependency_test2_func, &parent_dependent_ctx);
+            jq.add_dependency(parentid, parent_dependentid);
+            jq.end_add(parent_dependentid);
+        jq.end_add(parentid);
         jq.wait(parent_dependentid);
         
         int i = 1;
@@ -331,7 +340,7 @@ void mandelbrot_test() {
 		{
 			for(unsigned i = 0; i < kNumFractals; ++i)
 			{
-                task_id parent = jq.create_task(0, 0);
+                task_id parent = jq.begin_add(0, 0);
 				printf("Calculating fractal %i/%i...\n", i+1, kNumFractals);
 				gettimeofday(&t1, 0);
 				g_delta_cr = mandelbrot_width/kImageWidth;
@@ -344,11 +353,12 @@ void mandelbrot_test() {
                         block.start_cr = mandelbrot_x + double(bx) * mandelbrot_width / kNumHorizontalBlocks;
                         block.start_ci = mandelbrot_y - double(by) * mandelbrot_height / kNumVerticalBlocks;
                         block.result = image_mt + bx * kBlockWidth + by * kBlockHeight * kImageWidth;
-                        task_id id = jq.create_task(calculate_mandelbrot_block, &block);
+                        task_id id = jq.begin_add(calculate_mandelbrot_block, &block);
                         jq.add_child(parent, id);
+                        jq.end_add(id);
                     }
                 
-                jq.submit_current_transaction();
+                jq.end_add(parent);
 				jq.wait(parent);
 				gettimeofday(&t2, 0);
 				double e = elapsed_time_ms(t1, t2);
@@ -372,7 +382,8 @@ void mandelbrot_test() {
 
 int main (int argc, char * const argv[]) {    
     dependency_test1();
-    dependency_test2();
+    //dependency_test2();
+    dependency_test3();
     mandelbrot_test();
     return 0;
 }

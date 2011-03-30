@@ -38,6 +38,7 @@
 		8DD76F6C0486A84900D96B5E /* Task Scheduler */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "Task Scheduler"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C6859E8B029090EE04C91782 /* Task Scheduler.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = "Task Scheduler.1"; sourceTree = "<group>"; };
 		C7715DBD132C2FE200BC1ACA /* spsc_queue.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = spsc_queue.hpp; sourceTree = "<group>"; };
+		C7AAC2B2132DB17300FD976D /* spin_lock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = spin_lock.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +76,7 @@
 				63CBE2F712EA8D4500DBB918 /* mpmc_bounded_queue.hpp */,
 				6385A80412F1484C00801742 /* work_stealing_lock_scheduler.hpp */,
 				C7715DBD132C2FE200BC1ACA /* spsc_queue.hpp */,
+				C7AAC2B2132DB17300FD976D /* spin_lock.hpp */,
 			);
 			name = Source;
 			sourceTree = "<group>";
